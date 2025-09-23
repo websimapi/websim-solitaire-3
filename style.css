@@ -1,0 +1,324 @@
+:root {
+    --card-width: clamp(40px, 12.8vw, 90px);
+    --card-height: calc(var(--card-width) * 1.4);
+    --card-border-radius: clamp(3px, 1.2vw, 6px);
+    --pile-gap: clamp(4px, 1.5vw, 12px);
+    --tableau-overlap-visible: calc(var(--card-height) / 4.5);
+    --tableau-overlap-hidden: calc(var(--card-height) / 10);
+    
+    --color-background: #0d472a;
+    --color-felt: #105937;
+    --color-pile: #0000002a;
+    --color-card-front: #fdfdfd;
+    --color-card-back: #1e5c37;
+    --color-red: #d92d2d;
+    --color-black: #222;
+    --color-text-light: #fff;
+    --color-accent: #ffc107;
+
+    font-size: 16px;
+    --safe-area-inset-top: env(safe-area-inset-top, 0px);
+    --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-inset-left: env(safe-area-inset-left, 0px);
+    --safe-area-inset-right: env(safe-area-inset-right, 0px);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    background: radial-gradient(circle, var(--color-felt) 0%, var(--color-background) 80%);
+    color: var(--color-text-light);
+    overflow: hidden;
+    height: 100dvh;
+    width: 100dvw;
+    user-select: none;
+    position: fixed; /* Prevents pull-to-refresh and other gestures */
+}
+
+#game-container {
+    display: flex;
+    flex-direction: column;
+    padding: var(--pile-gap);
+    padding-top: calc(var(--pile-gap) + var(--safe-area-inset-top));
+    padding-bottom: calc(var(--pile-gap) + var(--safe-area-inset-bottom));
+    padding-left: calc(var(--pile-gap) + var(--safe-area-inset-left));
+    padding-right: calc(var(--pile-gap) + var(--safe-area-inset-right));
+    height: 100dvh;
+    gap: var(--pile-gap);
+}
+
+.top-bar {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--pile-gap);
+    flex-shrink: 0;
+    align-items: flex-start;
+}
+
+#game-menu {
+    display: flex;
+    flex-direction: column;
+    gap: var(--pile-gap);
+    align-items: center;
+}
+
+#new-game-btn, #auto-win-btn, #win-new-game-btn {
+    padding: 0.5em;
+    font-size: 1rem;
+    font-weight: bold;
+    color: var(--color-black);
+    background-color: var(--color-accent);
+    border: none;
+    border-radius: var(--card-border-radius);
+    cursor: pointer;
+    transition: background-color 0.2s;
+    white-space: nowrap;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: calc(var(--card-width) * 0.7);
+    height: calc(var(--card-width) * 0.7);
+}
+
+#win-new-game-btn {
+    width: auto;
+    height: auto;
+    padding: 0.75em 1.5em;
+}
+
+#new-game-btn:hover, #auto-win-btn:hover, #win-new-game-btn:hover {
+    background-color: #ffca2c;
+}
+
+#foundations {
+    display: flex;
+    gap: var(--pile-gap);
+}
+
+.pile {
+    width: var(--card-width);
+    height: var(--card-height);
+    background-color: var(--color-pile);
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+    border-radius: var(--card-border-radius);
+    position: relative;
+}
+
+#tableau {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--pile-gap);
+    flex-grow: 1;
+    position: relative;
+}
+
+.tableau-pile {
+    height: 100%;
+    border: none;
+    background: none;
+}
+
+.tableau-pile::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--card-width);
+    height: var(--card-height);
+    background-color: var(--color-pile);
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+    border-radius: var(--card-border-radius);
+}
+
+.bottom-bar {
+    display: flex;
+    justify-content: center;
+    gap: var(--pile-gap);
+    flex-shrink: 0;
+    height: 1px; /* Just a spacer */
+}
+
+#stock-waste-container {
+    display: flex;
+    gap: var(--pile-gap);
+}
+
+/* Card Styles */
+.card {
+    width: var(--card-width);
+    height: var(--card-height);
+    border-radius: var(--card-border-radius);
+    position: absolute;
+    cursor: pointer;
+    transform-origin: center center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
+    transition: transform 0.2s ease-out, top 0.2s ease-out;
+    overflow: hidden;
+}
+
+.card.dragging {
+    cursor: grabbing;
+    z-index: 1000;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+    transition: none; /* Disable transition while dragging for instant feedback */
+}
+
+.card .card-face {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    backface-visibility: hidden;
+    border-radius: var(--card-border-radius);
+    overflow: hidden;
+}
+
+.card .card-front {
+    background-color: var(--color-card-front);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: clamp(2px, 1.2vw, 5px);
+    font-size: calc(var(--card-width) * 0.28);
+    font-weight: bold;
+    border: 1px solid #ddd;
+}
+
+.card .card-back {
+    background-color: var(--color-card-back);
+    background-image: url('card-back.png');
+    background-size: cover;
+    background-position: center;
+    border: 1px solid rgba(0,0,0,0.2);
+    /* transform: rotateY(180deg); This is handled by is-flipped now */
+}
+
+.card-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.5s;
+    transform-style: preserve-3d;
+}
+
+.card.is-flipped .card-inner {
+    transform: rotateY(180deg);
+}
+
+.card-front, .card-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    -webkit-backface-visibility: hidden; /* Safari */
+    backface-visibility: hidden;
+    border-radius: var(--card-border-radius);
+    overflow: hidden;
+}
+
+.card-back {
+    transform: rotateY(180deg);
+}
+
+.card .card-value, .card .card-suit {
+    line-height: 1;
+}
+
+.card .top-left {
+    text-align: left;
+}
+.card .bottom-right {
+    text-align: right;
+    transform: rotate(180deg);
+}
+
+.card .card-suit img {
+    width: calc(var(--card-width) * 0.22);
+    height: auto;
+    display: block;
+}
+
+.card[data-color="red"] { color: var(--color-red); }
+.card[data-color="black"] { color: var(--color-black); }
+
+.card[data-pile^="tableau"].is-flipped {
+    top: calc(var(--tableau-overlap-hidden) * var(--card-index));
+}
+.card[data-pile^="tableau"]:not(.is-flipped) {
+    top: calc(var(--tableau-overlap-visible) * var(--card-index));
+}
+
+.card[data-pile="waste"] {
+    transform: translateX(calc(var(--pile-gap) * var(--card-index) / 4));
+}
+
+/* Win Screen */
+#win-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    opacity: 1;
+    transition: opacity 0.5s;
+}
+
+#win-screen.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.win-message {
+    text-align: center;
+    padding: clamp(20px, 5vw, 40px);
+    background-color: var(--color-background);
+    border-radius: 20px;
+    box-shadow: 0 0 30px rgba(0,0,0,0.5), 0 0 40px var(--color-accent);
+}
+
+.win-message h1 {
+    font-size: clamp(2.5rem, 8vw, 4rem);
+    color: var(--color-accent);
+    margin-bottom: 10px;
+    text-shadow: 0 0 10px var(--color-accent);
+}
+
+.win-message p {
+    font-size: clamp(1rem, 4vw, 1.5rem);
+    margin-bottom: 30px;
+}
+
+/* For drag drop validation */
+.pile.drop-valid, .tableau-pile.drop-valid::before {
+    background-color: #ffffff44;
+    border-style: solid;
+}
+.pile.drop-invalid, .tableau-pile.drop-invalid::before {
+    background-color: #ff000044;
+    border-style: solid;
+}
+
+.stock-pile.empty::after {
+    content: '⟳';
+    font-size: calc(var(--card-width) / 1.5);
+    color: #ffffff4d;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+}
+
+#game-container, .card {
+    touch-action: none;
+}
