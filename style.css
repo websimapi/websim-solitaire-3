@@ -134,6 +134,7 @@ body {
     background-color: var(--color-pile);
     border: 1px dashed rgba(255, 255, 255, 0.2);
     border-radius: var(--card-border-radius);
+    pointer-events: none;
 }
 
 .bottom-bar {
