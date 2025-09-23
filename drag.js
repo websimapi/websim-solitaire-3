@@ -13,19 +13,10 @@ export class Drag {
         this.isDragging = false;
         this.dragStarted = false; // Track if drag actually started
         this.pointerId = null;
-        this.captureEl = null;
-
-        // Store original positions for snap back
-        this.originalPositions = [];
 
         this.onPointerDown = this.onPointerDown.bind(this);
         this.onPointerMove = this.onPointerMove.bind(this);
         this.onPointerUp = this.onPointerUp.bind(this);
-
-        // Add global listeners for move and up events
-        document.addEventListener('pointermove', this.onPointerMove, { passive: false });
-        document.addEventListener('pointerup', this.onPointerUp);
-        document.addEventListener('pointercancel', this.onPointerUp);
     }
 
     addCardListeners() {
@@ -103,13 +94,14 @@ export class Drag {
 
     onPointerDown(e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return;
+        if (this.isDragging) return;
 
         const cardElement = e.target.closest('.card');
         if (!cardElement) return;
 
+        // Prevent default text selection, etc.
         e.preventDefault();
-        e.stopPropagation();
-
+        
         const cardId = cardElement.dataset.id;
         const { pile, pileName, cardIndex } = this.game.getCardAndPile(cardId);
 
@@ -119,75 +111,57 @@ export class Drag {
 
         // Validate draggable cards
         if (pileType === 'tableau') {
-            // Must be face up
-            if (!pile[cardIndex].isFaceUp) {
-                return;
-            }
-            
-            // Get all cards from this card to the end of pile
+            if (!pile[cardIndex].isFaceUp) return;
             const cardsToMove = pile.slice(cardIndex);
-            
-            // Check if this forms a valid sequence for moving
-            if (cardsToMove.length === 0 || !this.game.isValidTableauSequence(cardsToMove)) {
-                return;
-            }
-            
+            if (cardsToMove.length === 0 || !this.game.isValidTableauSequence(cardsToMove)) return;
             this.draggedCards = cardsToMove;
         } else if (pileType === 'waste' && cardIndex === pile.length - 1) {
-            // Allow dragging top card from waste
             this.draggedCards = [pile[cardIndex]];
         } else if (pileType === 'foundation' && cardIndex === pile.length - 1) {
-            // Allow dragging top card from foundation
             this.draggedCards = [pile[cardIndex]];
         } else {
             return;
         }
+        
+        e.stopPropagation();
 
-        // Reset drag state
-        this.isDragging = false;
+        this.isDragging = true;
         this.dragStarted = false;
+        this.pointerId = e.pointerId;
 
         this.startPile = pileName;
         this.draggedElements = this.draggedCards.map(c => document.querySelector(`[data-id="${c.id}"]`));
 
-        if (this.draggedElements.length === 0 || !this.draggedElements[0]) return;
+        if (this.draggedElements.length === 0 || !this.draggedElements[0]) {
+            this.resetDragState();
+            return;
+        }
 
         const rect = this.draggedElements[0].getBoundingClientRect();
-        this.offsetX = e.clientX - rect.left;
-        this.offsetY = e.clientY - rect.top;
         this.startX = e.clientX;
         this.startY = e.clientY;
+        this.offsetX = e.clientX - rect.left;
+        this.offsetY = e.clientY - rect.top;
 
-        // Store original positions for snap back
-        this.originalPositions = this.draggedElements.map(el => {
-            const elRect = el.getBoundingClientRect();
-            const containerRect = document.getElementById('game-container').getBoundingClientRect();
-            return {
-                x: elRect.left - containerRect.left,
-                y: elRect.top - containerRect.top
-            };
-        });
-
-        this.pointerId = e.pointerId;
-        this.captureEl = e.currentTarget;
-        try { this.captureEl.setPointerCapture(this.pointerId); } catch {}
+        // Add move/up listeners
+        document.addEventListener('pointermove', this.onPointerMove, { passive: false });
+        document.addEventListener('pointerup', this.onPointerUp, { once: true });
+        document.addEventListener('pointercancel', this.onPointerUp, { once: true });
     }
 
     onPointerMove(e) {
-        if (this.draggedElements.length === 0) return;
+        if (!this.isDragging || e.pointerId !== this.pointerId) return;
 
         const dx = e.clientX - this.startX;
         const dy = e.clientY - this.startY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
 
         // Start dragging after moving a threshold distance
-        if (!this.isDragging && distance > 8) {
-            this.isDragging = true;
+        if (!this.dragStarted && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
             this.dragStarted = true;
             this.prepareForDrag();
         }
 
-        if (this.isDragging) {
+        if (this.dragStarted) {
             e.preventDefault();
             this.updateDraggedElementsPosition(e.clientX, e.clientY);
             this.updateDropZoneHighlight(e.clientX, e.clientY);
@@ -197,31 +171,31 @@ export class Drag {
     prepareForDrag() {
         this.draggedElements.forEach((el, i) => {
             el.classList.add('dragging');
-            el.style.position = 'fixed';
             el.style.zIndex = 1000 + i;
-            el.style.pointerEvents = 'none'; // Prevent interference with drop detection
         });
     }
 
     updateDraggedElementsPosition(clientX, clientY) {
         if (this.draggedElements.length === 0) return;
 
-        const baseX = clientX - this.offsetX;
-        const baseY = clientY - this.offsetY;
+        const firstEl = this.draggedElements[0];
+        const rect = firstEl.parentElement.getBoundingClientRect();
+
+        const x = clientX - rect.left - this.offsetX;
+        const y = clientY - rect.top - this.offsetY;
 
         this.draggedElements.forEach((el, i) => {
             const yOffset = i * 25; // Stack cards with slight vertical offset
-            el.style.left = `${baseX}px`;
-            el.style.top = `${baseY + yOffset}px`;
+            el.style.transform = `translate(${x}px, ${y + yOffset}px)`;
         });
     }
 
     updateDropZoneHighlight(x, y) {
-        // Clear previous highlights
         document.querySelectorAll('.pile').forEach(p => p.classList.remove('drop-valid', 'drop-invalid'));
 
-        // Find drop target
+        this.draggedElements.forEach(el => el.style.pointerEvents = 'none');
         const dropTarget = document.elementFromPoint(x, y)?.closest('.pile');
+        this.draggedElements.forEach(el => el.style.pointerEvents = '');
 
         if (dropTarget && this.draggedCards.length > 0) {
             const targetPileName = dropTarget.dataset.pile;
@@ -231,16 +205,24 @@ export class Drag {
     }
 
     onPointerUp(e) {
-        if (!this.isDragging || this.draggedElements.length === 0) {
+        if (!this.isDragging || e.pointerId !== this.pointerId) {
+            return;
+        }
+        
+        // Remove listeners
+        document.removeEventListener('pointermove', this.onPointerMove);
+        document.removeEventListener('pointercancel', this.onPointerUp);
+
+        if (!this.dragStarted) {
             this.resetDragState();
             return;
         }
 
-        // Clear highlights
         document.querySelectorAll('.pile').forEach(p => p.classList.remove('drop-valid', 'drop-invalid'));
 
-        // Find drop target
+        this.draggedElements.forEach(el => el.style.pointerEvents = 'none');
         const dropTarget = document.elementFromPoint(e.clientX, e.clientY)?.closest('.pile');
+        this.draggedElements.forEach(el => el.style.pointerEvents = '');
 
         let moveSuccessful = false;
         if (dropTarget) {
@@ -255,25 +237,19 @@ export class Drag {
             this.snapBack();
         }
 
-        this.resetDragState();
+        // Don't call resetDragState immediately if snapping back, let the animation finish
+        if (!moveSuccessful) {
+           setTimeout(() => this.resetDragState(), 200);
+        } else {
+           this.resetDragState();
+        }
     }
 
     snapBack() {
-        // Animate cards back to original positions
-        this.draggedElements.forEach((el, i) => {
-            if (el && this.originalPositions[i]) {
-                const original = this.originalPositions[i];
-                const containerRect = document.getElementById('game-container').getBoundingClientRect();
-                
-                el.style.transition = 'left 0.3s ease-out, top 0.3s ease-out';
-                el.style.left = `${containerRect.left + original.x}px`;
-                el.style.top = `${containerRect.top + original.y}px`;
-                
-                setTimeout(() => {
-                    if (el) {
-                        el.style.transition = '';
-                    }
-                }, 300);
+        this.draggedElements.forEach((el) => {
+            if (el) {
+                el.style.transition = 'transform 0.2s ease-out';
+                el.style.transform = 'translate(0, 0)';
             }
         });
     }
@@ -283,11 +259,8 @@ export class Drag {
             this.draggedElements.forEach(el => {
                 if (el) {
                     el.classList.remove('dragging');
-                    el.style.position = '';
-                    el.style.left = '';
-                    el.style.top = '';
                     el.style.zIndex = '';
-                    el.style.pointerEvents = '';
+                    el.style.transform = '';
                     el.style.transition = '';
                 }
             });
@@ -296,15 +269,11 @@ export class Drag {
         this.draggedCards = [];
         this.draggedElements = [];
         this.startPile = null;
-        this.originalPositions = [];
-
         this.pointerId = null;
-        this.captureEl = null;
 
         // Reset drag flags after a short delay to prevent click events from firing
-        setTimeout(() => {
-            this.isDragging = false;
-            this.dragStarted = false;
-        }, 50);
+        const wasStarted = this.dragStarted;
+        this.isDragging = false;
+        this.dragStarted = false;
     }
 }
