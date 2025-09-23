@@ -119,12 +119,26 @@ export class Drag {
 
         // Validate draggable cards
         if (pileType === 'tableau') {
-            const cardsToMove = pile.slice(cardIndex);
-            if (cardsToMove.length === 0 || !cardsToMove[0].isFaceUp || !this.game.isValidTableauSequence(cardsToMove)) {
+            // Must be face up
+            if (!pile[cardIndex].isFaceUp) {
                 return;
             }
-        } else if ((pileType === 'waste' || pileType === 'foundation') && cardIndex === pile.length - 1) {
-            // Allow dragging top card
+            
+            // Get all cards from this card to the end of pile
+            const cardsToMove = pile.slice(cardIndex);
+            
+            // Check if this forms a valid sequence for moving
+            if (cardsToMove.length === 0 || !this.game.isValidTableauSequence(cardsToMove)) {
+                return;
+            }
+            
+            this.draggedCards = cardsToMove;
+        } else if (pileType === 'waste' && cardIndex === pile.length - 1) {
+            // Allow dragging top card from waste
+            this.draggedCards = [pile[cardIndex]];
+        } else if (pileType === 'foundation' && cardIndex === pile.length - 1) {
+            // Allow dragging top card from foundation
+            this.draggedCards = [pile[cardIndex]];
         } else {
             return;
         }
@@ -134,7 +148,6 @@ export class Drag {
         this.dragStarted = false;
 
         this.startPile = pileName;
-        this.draggedCards = pile.slice(cardIndex);
         this.draggedElements = this.draggedCards.map(c => document.querySelector(`[data-id="${c.id}"]`));
 
         if (this.draggedElements.length === 0 || !this.draggedElements[0]) return;
