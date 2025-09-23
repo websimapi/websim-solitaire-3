@@ -107,6 +107,18 @@ export class Game {
         this.onStateChanged(this.state);
     }
     
+    getPile(pileName) {
+        const [type, index] = pileName.split('-');
+        if (type === 'stock' || type === 'waste') {
+            return this.state[type];
+        } else if (type === 'foundation') {
+            return this.state.foundations[index];
+        } else if (type === 'tableau') {
+            return this.state.tableau[index];
+        }
+        return null;
+    }
+
     getCardAndPile(cardId) {
         for (const pileType of ['stock', 'waste', 'foundations', 'tableau']) {
             if (pileType === 'foundations' || pileType === 'tableau') {

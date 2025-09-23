@@ -13,6 +13,7 @@ export class Drag {
         this.isDragging = false;
         this.dragStarted = false; // Track if drag actually started
         this.pointerId = null;
+        this.ghosts = [];
 
         this.onPointerDown = this.onPointerDown.bind(this);
         this.onPointerMove = this.onPointerMove.bind(this);
@@ -169,24 +170,47 @@ export class Drag {
     }
 
     prepareForDrag() {
+        // Create ghost elements
+        this.ghosts = this.draggedElements.map(el => {
+            const ghost = el.cloneNode(true);
+            ghost.classList.add('ghost');
+            el.parentElement.insertBefore(ghost, el);
+            return ghost;
+        });
+
         this.draggedElements.forEach((el, i) => {
             el.classList.add('dragging');
             el.style.zIndex = 1000 + i;
+
+            // Reparent to game-container for proper positioning
+            const rect = el.getBoundingClientRect();
+            document.getElementById('game-container').appendChild(el);
+            el.style.position = 'absolute';
+            el.style.left = `${rect.left}px`;
+            el.style.top = `${rect.top}px`;
         });
     }
 
     updateDraggedElementsPosition(clientX, clientY) {
         if (this.draggedElements.length === 0) return;
 
+        const containerRect = document.getElementById('game-container').getBoundingClientRect();
         const firstEl = this.draggedElements[0];
-        const rect = firstEl.parentElement.getBoundingClientRect();
 
-        const x = clientX - rect.left - this.offsetX;
-        const y = clientY - rect.top - this.offsetY;
+        // We use the initial absolute position (set in prepareForDrag) and add the delta
+        const initialRect = this.ghosts[0].getBoundingClientRect();
+        
+        const dx = clientX - this.startX;
+        const dy = clientY - this.startY;
 
         this.draggedElements.forEach((el, i) => {
             const yOffset = i * 25; // Stack cards with slight vertical offset
-            el.style.transform = `translate(${x}px, ${y + yOffset}px)`;
+            const initialElRect = this.ghosts[i].getBoundingClientRect();
+            const newLeft = initialElRect.left - containerRect.left + dx;
+            const newTop = initialElRect.top - containerRect.top + dy;
+            
+            el.style.left = `${newLeft}px`;
+            el.style.top = `${newTop}px`;
         });
     }
 
@@ -238,42 +262,59 @@ export class Drag {
         }
 
         // Don't call resetDragState immediately if snapping back, let the animation finish
-        if (!moveSuccessful) {
-           setTimeout(() => this.resetDragState(), 200);
-        } else {
-           this.resetDragState();
+        if (moveSuccessful) {
+            this.resetDragState(true);
         }
     }
 
     snapBack() {
-        this.draggedElements.forEach((el) => {
+        this.draggedElements.forEach((el, i) => {
             if (el) {
-                el.style.transition = 'transform 0.2s ease-out';
-                el.style.transform = 'translate(0, 0)';
+                const ghostRect = this.ghosts[i].getBoundingClientRect();
+                const containerRect = document.getElementById('game-container').getBoundingClientRect();
+
+                el.style.transition = 'left 0.2s ease-out, top 0.2s ease-out';
+                el.style.left = `${ghostRect.left - containerRect.left}px`;
+                el.style.top = `${ghostRect.top - containerRect.top}px`;
             }
         });
+        setTimeout(() => this.resetDragState(false), 200);
     }
 
-    resetDragState() {
-        if (this.draggedElements) {
-            this.draggedElements.forEach(el => {
-                if (el) {
+    resetDragState(moveWasSuccessful) {
+        // Clean up ghosts
+        this.ghosts.forEach(g => g.remove());
+        this.ghosts = [];
+
+        // If move was successful, the UI.render will handle everything.
+        // We just need to remove the dragging elements from the DOM as they are now stale.
+        if (moveWasSuccessful) {
+            this.draggedElements.forEach(el => el.remove());
+        } else {
+             // If move failed, put the elements back into their original pile
+            const sourcePileElement = document.querySelector(`[data-pile="${this.startPile}"]`);
+            if (sourcePileElement) {
+                this.draggedElements.forEach(el => {
+                    // Reset styles before re-attaching
                     el.classList.remove('dragging');
+                    el.style.position = 'absolute';
                     el.style.zIndex = '';
                     el.style.transform = '';
                     el.style.transition = '';
-                }
-            });
+                    el.style.left = '';
+                    el.style.top = '';
+                    sourcePileElement.appendChild(el);
+                });
+                // After re-attaching, force a re-render of just this pile to fix styles
+                this.ui.renderPile(this.game.getPile(this.startPile), this.startPile);
+            }
         }
-
+        
         this.draggedCards = [];
         this.draggedElements = [];
         this.startPile = null;
-        this.pointerId = null;
-
-        // Reset drag flags after a short delay to prevent click events from firing
-        const wasStarted = this.dragStarted;
         this.isDragging = false;
-        this.dragStarted = false;
+        this.dragStarted = false; // Track if drag actually started
+        this.pointerId = null;
     }
 }

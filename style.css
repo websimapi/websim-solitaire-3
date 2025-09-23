@@ -164,6 +164,10 @@ body {
     overflow: hidden;
 }
 
+.card.ghost {
+    visibility: hidden;
+}
+
 .card.dragging {
     cursor: grabbing;
     z-index: 1000;
